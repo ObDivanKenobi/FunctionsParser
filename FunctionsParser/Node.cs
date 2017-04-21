@@ -110,6 +110,7 @@ namespace FunctionsParserNodes
 
         /// <summary>
         /// Возвращает новый объект, не изменяет исходный.
+        /// Если self — не NumberNode, то объект-результат будет содержать ссылку на операнд.
         /// </summary>
         /// <param name="self">исходный объект</param>
         /// <returns>изменённая копия исходного объекта</returns>
@@ -121,10 +122,7 @@ namespace FunctionsParserNodes
                 return -nn;
             }
 
-            if (self is FunctionNode || self is VariableNode)
-                return new FunctionNode(self, BinaryOperations.Multiply, new NumberNode(-1));
-
-            return new BinaryFunctionNode(new FunctionNode(self), BinaryOperations.Multiply, new NumberNode(-1));
+            return new BinaryFunctionNode(self, BinaryOperations.Multiply, new NumberNode(-1));
         }
 
         /// <summary>
@@ -140,10 +138,7 @@ namespace FunctionsParserNodes
                 return --nn;
             }
 
-            if (self is FunctionNode || self is VariableNode)
-                return new FunctionNode(self, BinaryOperations.Minus, new NumberNode(1));
-
-            return new BinaryFunctionNode(new FunctionNode(self), BinaryOperations.Minus, new NumberNode(1));
+            return new BinaryFunctionNode(self, BinaryOperations.Minus, new NumberNode(1));
         }
 
         /// <summary>
@@ -155,11 +150,6 @@ namespace FunctionsParserNodes
         static bool IsUnaryFunction(string expr, out string operation, out string argument)
         {
             argument = operation = string.Empty;
-            //string arg_template = "[(].*[)]$",
-            //       operation_template = $"^({functions})";
-            //Regex template = new Regex(operation_template + arg_template, RegexOptions.Singleline),
-            //      arg = new Regex(arg_template, RegexOptions.Singleline),
-            //      op = new Regex(operation_template, RegexOptions.Singleline);
             if (unaryFunctionTemplate.IsMatch(expr))
             {
                 argument = unaryFunctionArgumentTemplate.Match(expr).Value;
@@ -252,7 +242,7 @@ namespace FunctionsParserNodes
                 return new NumberNode(expression);
             //если переданное выражение является унарной функцией
             else if (IsUnaryFunction(expression, out operation, out argument))
-                return new FunctionNode(operation, argument);
+                return new UnaryFunctionNode(operation, argument);
             //если переданное выражение является переменной
             else
             {
@@ -262,7 +252,7 @@ namespace FunctionsParserNodes
 
                 //преобразуем унарный минус в (-1)*%переменная%
                 if (expression[0] == '-')
-                    return new FunctionNode(new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, new VariableNode(expression.Substring(1))));
+                    return new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, new VariableNode(expression.Substring(1)));
 
                 return new VariableNode(expression);
             }
@@ -272,10 +262,9 @@ namespace FunctionsParserNodes
                     operand2 = expression.Substring(dividerPosition + 1);
             operation = expression.Substring(dividerPosition, 1);
 
-            return new FunctionNode(operand1, operation, operand2);
+            return new BinaryFunctionNode(operand1, operation, operand2);
         }
 
-        //!!!!!!!!!!!!!Проверить все эти FunctionNode!
         /// <summary>
         /// Оптимизация поддерева.
         /// </summary>
@@ -286,16 +275,7 @@ namespace FunctionsParserNodes
         {
             //Clone(), чтобы обеспечить атомарность — если что-то в процессе пойдёт не так, то дерево откатится, а не будет частично изменённым.
             Node node = n.Clone();
-            if (node is FunctionNode)
-            {
-                FunctionNode tmp = node as FunctionNode;
-                tmp.operation = Optimize(tmp.operation);
-                if (tmp.operation.IsNumber || tmp.operation is VariableNode)
-                    node = tmp.operation;
-                else
-                    node = tmp;
-            }
-            else if (node is UnaryFunctionNode)
+            if (node is UnaryFunctionNode)
             {
                 UnaryFunctionNode tmp = node as UnaryFunctionNode;
                 tmp.argument = Optimize(tmp.argument);
@@ -378,93 +358,7 @@ namespace FunctionsParserNodes
                 }
 
             }
-
             return node;
-        }
-    }
-
-    class FunctionNode : Node
-    {
-        internal Node operation;
-
-        public FunctionNode(string operand1, string operation, string operand2)
-        {
-            this.operation = new BinaryFunctionNode(operand1, operation, operand2);
-        }
-
-        public FunctionNode(Node op1, BinaryOperations op, Node op2)
-        {
-            operation = new BinaryFunctionNode(op1, op, op2);
-        }
-
-        public FunctionNode(string func, string arg)
-        {
-            operation = new UnaryFunctionNode(func, arg);
-        }
-
-        public FunctionNode(string op, Node arg)
-        {
-            operation = new UnaryFunctionNode(op, arg);
-        }
-
-        public FunctionNode(Node operation)
-        {
-            this.operation = operation;
-        }
-
-        public override Node Clone()
-        {
-            return new FunctionNode(operation);
-        }
-
-        public override Node Differentiate()
-        {
-            return new FunctionNode(operation.Differentiate());
-        }
-
-        public override Func<double> Functionalize()
-        {
-            function = operation.Functionalize();
-            return function;
-        }
-
-        public override TreeNode ToTree()
-        {
-            return operation.ToTree();
-        }
-
-        public override Node DifferentiateBy(string variable)
-        {
-            Node df = operation.DifferentiateBy(variable);
-            if (df is BinaryFunctionNode || df is UnaryFunctionNode)
-                return new FunctionNode(df);
-
-            return df;
-        }
-
-        public override string ToString()
-        {
-            return operation.ToString();
-        }
-
-        public override void SetVariables(SortedDictionary<string, double> vars)
-        {
-            operation.SetVariables(vars);
-        }
-
-        public override void SetTrigonometry(bool useDegrees)
-        {
-            operation.SetTrigonometry(useDegrees);
-        }
-
-        public override void CheckVariables(List<string> variables)
-        {
-            operation.CheckVariables(variables);
-        }
-
-        public override bool IsConstRelatively(string variable)
-        {
-            return operation.IsConstRelatively(variable);
         }
     }
 
@@ -503,17 +397,17 @@ namespace FunctionsParserNodes
             {
                 case BinaryOperations.Plus:
                 case BinaryOperations.Minus:
-                    return new FunctionNode(operand1.Differentiate(), operation, operand2.Differentiate());
+                    return new BinaryFunctionNode(operand1.Differentiate(), operation, operand2.Differentiate());
                 case BinaryOperations.Multiply:
                 {
                     //untested
                     #region Multiply
                     //(cf)' = c*f'
                     if (operand1.IsNumber)
-                        return new FunctionNode(operand1.Clone(), operation, operand2.Differentiate());
+                        return new BinaryFunctionNode(operand1.Clone(), operation, operand2.Differentiate());
                     //(fc)' = (f')*c
                     else if (operand2.IsNumber)
-                        return new FunctionNode(operand1.Differentiate(), operation, operand2.Clone());
+                        return new BinaryFunctionNode(operand1.Differentiate(), operation, operand2.Clone());
                     //(fg)' = f'g+fg'
                     else
                     {
@@ -521,10 +415,10 @@ namespace FunctionsParserNodes
                              g = operand2.Clone(),
                              f_dif = operand1.Differentiate(),
                              g_dif = operand2.Differentiate();
-                        return new FunctionNode(new FunctionNode(f_dif, BinaryOperations.Multiply, g),
-                                                BinaryOperations.Plus,
-                                                new FunctionNode(f, BinaryOperations.Multiply, g_dif)
-                                               );
+                        return new BinaryFunctionNode(new BinaryFunctionNode(f_dif, BinaryOperations.Multiply, g),
+                                                      BinaryOperations.Plus,
+                                                      new BinaryFunctionNode(f, BinaryOperations.Multiply, g_dif)
+                                                     );
                     }
                     #endregion
                 }
@@ -535,15 +429,15 @@ namespace FunctionsParserNodes
                     //(с)' = 0 !!!!!!!!
                     //(f/c)' = f'/c
                     if (operand2.IsNumber)
-                        return new FunctionNode(operand1.Differentiate(), operation, operand2.Clone());
+                        return new BinaryFunctionNode(operand1.Differentiate(), BinaryOperations.Divide, operand2.Clone());
                     //(c/f)' = c*(1/f)' = c*(f^-1)' = -c*f^(-2)*f'
                     else if (operand1.IsNumber)
                     {
                         NumberNode c = -(operand1.Clone() as NumberNode);
                         Node f = operand2.Clone(),
                                  f_dif = operand2.Differentiate(),
-                                 f_exp2 = new FunctionNode(f, BinaryOperations.Power, new NumberNode(-2));
-                        return new FunctionNode(c, BinaryOperations.Multiply, new FunctionNode(f_exp2, BinaryOperations.Multiply, f_dif));
+                                 f_exp2 = new BinaryFunctionNode(f, BinaryOperations.Power, new NumberNode(-2));
+                        return new BinaryFunctionNode(c, BinaryOperations.Multiply, new BinaryFunctionNode(f_exp2, BinaryOperations.Multiply, f_dif));
                     }
                     //(f/g)' = f'g - fg' / g^2
                     else
@@ -552,9 +446,9 @@ namespace FunctionsParserNodes
                                  g = operand2.Clone(),
                                  f_dif = operand1.Differentiate(),
                                  g_dif = operand1.Differentiate(),
-                                 left = new FunctionNode(new FunctionNode(f_dif, BinaryOperations.Multiply, g), BinaryOperations.Minus, new FunctionNode(f, BinaryOperations.Multiply, g_dif)),
-                                 right = new FunctionNode(g, BinaryOperations.Power, new NumberNode(2));
-                        return new FunctionNode(left, operation, right);
+                                 numerator = new BinaryFunctionNode(new BinaryFunctionNode(f_dif, BinaryOperations.Multiply, g), BinaryOperations.Minus, new BinaryFunctionNode(f, BinaryOperations.Multiply, g_dif)),
+                                 denominator = new BinaryFunctionNode(g, BinaryOperations.Power, new NumberNode(2));
+                        return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                     }
                     #endregion
                 }
@@ -569,7 +463,7 @@ namespace FunctionsParserNodes
                         NumberNode degree = tmp.operand2 as NumberNode;
                         --degree;
                         
-                        return new FunctionNode(new NumberNode(degree.Number+1), BinaryOperations.Multiply, tmp);
+                        return new BinaryFunctionNode(new NumberNode(degree.Number+1), BinaryOperations.Multiply, tmp);
                     }
                     //(f^c)' = c*f'*f^c-1 ???
                     else if (operand2.IsNumber)
@@ -582,18 +476,18 @@ namespace FunctionsParserNodes
                              f = operand1.Clone(),
                              f_dif = operand1.Differentiate();
 
-                        return new FunctionNode(new NumberNode(degree), BinaryOperations.Multiply, new FunctionNode(f_dif, BinaryOperations.Multiply, Clone()));
+                        return new BinaryFunctionNode(new NumberNode(degree), BinaryOperations.Multiply, new BinaryFunctionNode(f_dif, BinaryOperations.Multiply, Clone()));
                     }
                     //(a^f)' = ln(a)*a^f*f'
                     else if (operand1.IsNumber)
                     {
-                        Node ln = new FunctionNode("ln", operand1.Clone());
+                        Node ln = new UnaryFunctionNode("ln", operand1.Clone());
                         //(a^x)' = ln(a)*a^x
                         if (operand2.IsVariable)
-                            return new FunctionNode(ln, BinaryOperations.Multiply, Clone());
+                            return new BinaryFunctionNode(ln, BinaryOperations.Multiply, Clone());
                         //(a^f)' = ln(a)*a^x*f'
                         else
-                            return new FunctionNode(ln, BinaryOperations.Multiply, new FunctionNode(Clone(), BinaryOperations.Multiply, operand2.Differentiate()));
+                            return new BinaryFunctionNode(ln, BinaryOperations.Multiply, new BinaryFunctionNode(Clone(), BinaryOperations.Multiply, operand2.Differentiate()));
                     }
                     //f^g
                     else
@@ -602,9 +496,9 @@ namespace FunctionsParserNodes
                                  g = operand2.Clone(),
                                  f_dif = operand1.Differentiate(),
                                  g_dif = operand2.Differentiate(),
-                                 add1 = new FunctionNode(g_dif, BinaryOperations.Multiply, new UnaryFunctionNode("ln", f)),
-                                 add2 = new FunctionNode(g, BinaryOperations.Multiply, new FunctionNode(f_dif, BinaryOperations.Divide, f));
-                        return new FunctionNode(Clone(), BinaryOperations.Multiply, new FunctionNode(add1, BinaryOperations.Plus, add2));
+                                 add1 = new BinaryFunctionNode(g_dif, BinaryOperations.Multiply, new UnaryFunctionNode("ln", f)),
+                                 add2 = new BinaryFunctionNode(g, BinaryOperations.Multiply, new BinaryFunctionNode(f_dif, BinaryOperations.Divide, f));
+                        return new BinaryFunctionNode(Clone(), BinaryOperations.Multiply, new BinaryFunctionNode(add1, BinaryOperations.Plus, add2));
                     }
                     #endregion
                 }
@@ -620,17 +514,17 @@ namespace FunctionsParserNodes
                 //changed but untested
                 case BinaryOperations.Plus:
                 case BinaryOperations.Minus:
-                    return new FunctionNode(operand1.DifferentiateBy(variable), operation, operand2.DifferentiateBy(variable));
+                    return new BinaryFunctionNode(operand1.DifferentiateBy(variable), operation, operand2.DifferentiateBy(variable));
                 //changed but untested
                 case BinaryOperations.Multiply:
                 {
                     #region Multiply
                     //(cf)' = c*f'
                     if (operand1.IsConstRelatively(variable))
-                        return new FunctionNode(operand1.Clone(), operation, operand2.DifferentiateBy(variable));
+                        return new BinaryFunctionNode(operand1.Clone(), operation, operand2.DifferentiateBy(variable));
                     //(fc)' = (f')*c
                     else if (operand2.IsConstRelatively(variable))
-                        return new FunctionNode(operand1.DifferentiateBy(variable), operation, operand2.Clone());
+                        return new BinaryFunctionNode(operand1.DifferentiateBy(variable), operation, operand2.Clone());
                     //(fg)' = f'g+fg'
                     else
                     {
@@ -638,10 +532,10 @@ namespace FunctionsParserNodes
                              g = operand2.Clone(),
                              f_dif = operand1.DifferentiateBy(variable),
                              g_dif = operand2.DifferentiateBy(variable);
-                        return new FunctionNode(new FunctionNode(f_dif, BinaryOperations.Multiply, g), 
-                                                BinaryOperations.Plus, 
-                                                new FunctionNode(f, BinaryOperations.Multiply, g_dif)
-                                               );
+                        return new BinaryFunctionNode(new BinaryFunctionNode(f_dif, BinaryOperations.Multiply, g), 
+                                                      BinaryOperations.Plus, 
+                                                      new BinaryFunctionNode(f, BinaryOperations.Multiply, g_dif)
+                                                     );
                     }
                     #endregion
                 }
@@ -654,15 +548,15 @@ namespace FunctionsParserNodes
                         return new NumberNode(0);
                     //(f/c)' = f'/c
                     if (operand2.IsConstRelatively(variable))
-                        return new FunctionNode(operand1.DifferentiateBy(variable), operation, operand2.Clone());
+                        return new BinaryFunctionNode(operand1.DifferentiateBy(variable), operation, operand2.Clone());
                     //(c/f)' = c*(1/f)' = c*(f^-1)' = -c*f^(-2)*f'
                     else if (operand1.IsConstRelatively(variable))
                     {
                         Node f = operand2.Clone(),
                              c = -operand1,
                              f_dif = operand2.DifferentiateBy(variable),
-                             f_pow2 = new FunctionNode(f, BinaryOperations.Power, new NumberNode(-2));
-                        return new FunctionNode(c, BinaryOperations.Multiply, new FunctionNode(f_pow2, BinaryOperations.Multiply, f_dif));
+                             f_pow2 = new BinaryFunctionNode(f, BinaryOperations.Power, new NumberNode(-2));
+                        return new BinaryFunctionNode(c, BinaryOperations.Multiply, new BinaryFunctionNode(f_pow2, BinaryOperations.Multiply, f_dif));
                     }
                     //(f/g)' = (f'g - fg') / g^2
                     else
@@ -671,9 +565,9 @@ namespace FunctionsParserNodes
                              g = operand2.Clone(),
                              f_dif = operand1.DifferentiateBy(variable),
                              g_dif = operand1.DifferentiateBy(variable),
-                             numerator = new FunctionNode(new FunctionNode(f_dif, BinaryOperations.Multiply, g), BinaryOperations.Minus, new FunctionNode(f, BinaryOperations.Multiply, g_dif)), //f'g - fg'
-                             denominator = new FunctionNode(g, BinaryOperations.Power, new NumberNode(2)); //g^2
-                        return new FunctionNode(numerator, BinaryOperations.Divide, denominator);
+                             numerator = new BinaryFunctionNode(new BinaryFunctionNode(f_dif, BinaryOperations.Multiply, g), BinaryOperations.Minus, new BinaryFunctionNode(f, BinaryOperations.Multiply, g_dif)), //f'g - fg'
+                             denominator = new BinaryFunctionNode(g, BinaryOperations.Power, new NumberNode(2)); //g^2
+                        return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                     }
                     #endregion
                 }
@@ -690,16 +584,16 @@ namespace FunctionsParserNodes
                         Node coef = operand2.Clone(),
                              f = operand1.Clone(),
                              f_dif = operand1.DifferentiateBy(variable),
-                             newPwr = new FunctionNode(f, BinaryOperations.Power, --coef);
+                             newPwr = new BinaryFunctionNode(f, BinaryOperations.Power, --coef);
 
                         //f'*(c*f^(c-1))
-                        return new FunctionNode(f_dif, BinaryOperations.Multiply, new FunctionNode(operand2.Clone(), BinaryOperations.Multiply, newPwr));
+                        return new BinaryFunctionNode(f_dif, BinaryOperations.Multiply, new BinaryFunctionNode(operand2.Clone(), BinaryOperations.Multiply, newPwr));
                     }
                     //(const^f)' = ln(const)*const^f*f'
                     if (operand1.IsConstRelatively(variable))
                     {
-                        Node ln = new FunctionNode("ln", operand1.Clone());
-                        return new FunctionNode(ln, BinaryOperations.Multiply, new FunctionNode(Clone(), BinaryOperations.Multiply, operand2.DifferentiateBy(variable)));
+                        Node ln = new UnaryFunctionNode("ln", operand1.Clone());
+                        return new BinaryFunctionNode(ln, BinaryOperations.Multiply, new BinaryFunctionNode(Clone(), BinaryOperations.Multiply, operand2.DifferentiateBy(variable)));
                     }
                     //f^g = f^g * (g'*ln(f) + g*f'/f) 
                     else
@@ -708,9 +602,9 @@ namespace FunctionsParserNodes
                              g = operand2.Clone(),
                              f_dif = operand1.DifferentiateBy(variable),
                              g_dif = operand2.DifferentiateBy(variable),
-                             add1 = new FunctionNode(g_dif, BinaryOperations.Multiply, new FunctionNode("ln", f)), //g'*ln(f)
-                             add2 = new FunctionNode(g, BinaryOperations.Multiply, new FunctionNode(f_dif, BinaryOperations.Divide, f)); // g*f'/f
-                        return new FunctionNode(Clone(), BinaryOperations.Multiply, new FunctionNode(add1, BinaryOperations.Plus, add2));
+                             add1 = new BinaryFunctionNode(g_dif, BinaryOperations.Multiply, new UnaryFunctionNode("ln", f)), //g'*ln(f)
+                             add2 = new BinaryFunctionNode(g, BinaryOperations.Multiply, new BinaryFunctionNode(f_dif, BinaryOperations.Divide, f)); // g*f'/f
+                        return new BinaryFunctionNode(Clone(), BinaryOperations.Multiply, new BinaryFunctionNode(add1, BinaryOperations.Plus, add2));
                     }
                     #endregion
                 }
@@ -861,64 +755,64 @@ namespace FunctionsParserNodes
             {
                 case "sin":
                 {
-                    if (argument is FunctionNode)
-                    {
-                        Node left = new FunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.Differentiate()),
-                                 right = new UnaryFunctionNode("cos", argument.Clone());
-                        return new FunctionNode(left, BinaryOperations.Multiply, right);
-                    }
-                    else if (argument is VariableNode)
-                        return new FunctionNode("cos", argument.Clone());
-                    else
+                    if (argument is NumberNode)
                         return new NumberNode(0);
+                    else if (argument is VariableNode)
+                        return new UnaryFunctionNode("cos", argument.Clone());
+                    else
+                    {
+                        Node left = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.Differentiate()),
+                                 right = new UnaryFunctionNode("cos", argument.Clone());
+                        return new BinaryFunctionNode(left, BinaryOperations.Multiply, right);
+                    }
                 }
                 case "cos":
                 {
                     Node left, right = new UnaryFunctionNode("sin", argument.Clone());
-                    if (argument is FunctionNode)
-                        left = new FunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.Differentiate());
+                    if (argument is NumberNode)
+                        return new NumberNode(0);
                     else if (argument is VariableNode)
                         left = new NumberNode(-1);
                     else
-                        return new NumberNode(0);
+                        left = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.Differentiate());
 
-                    return new FunctionNode(left, BinaryOperations.Multiply, right);
+                    return new BinaryFunctionNode(left, BinaryOperations.Multiply, right);
                 }
                 case "tg":
                 {
-                    Node numerator, denominator = new FunctionNode(new UnaryFunctionNode("cos", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
-                    if (argument is FunctionNode)
-                        numerator = argument.Differentiate();
+                    Node numerator, denominator = new BinaryFunctionNode(new UnaryFunctionNode("cos", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
+                    if (argument is NumberNode)
+                        return new NumberNode(0); 
                     else if (argument is VariableNode)
                         numerator = new NumberNode(1);
                     else
-                        return new NumberNode(0);
+                        numerator = argument.Differentiate();
 
-                    return new FunctionNode(numerator, BinaryOperations.Divide, denominator);
+                    return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                 }
                 case "ctg":
                 {
-                    Node numerator, denominator = new FunctionNode(new UnaryFunctionNode("sin", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
-                    if (argument is FunctionNode)
-                        numerator = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.Differentiate());
+                    Node numerator, denominator = new BinaryFunctionNode(new UnaryFunctionNode("sin", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
+                    if (argument is NumberNode)
+                        return new NumberNode(0);
                     else if (argument is VariableNode)
                         numerator = new NumberNode(1);
                     else
-                        return new NumberNode(0);
+                        numerator = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.Differentiate());
 
-                    return new FunctionNode(numerator, BinaryOperations.Divide, denominator);
+                    return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                 }
                 case "ln":
                 {
                     Node numerator, denominator = argument.Clone();
-                    if (argument is FunctionNode)
-                        numerator = argument.Differentiate();
+                    if (argument is NumberNode)
+                        return new NumberNode(0);
                     else if (argument is VariableNode)
                         numerator = new NumberNode(1);
                     else
-                        return new NumberNode(0);
+                        numerator = argument.Differentiate();
 
-                    return new FunctionNode(numerator, BinaryOperations.Divide, denominator);
+                    return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                 }
                 default: { throw new InvalidOperationException("Операция не распознана."); }
             }
@@ -930,64 +824,64 @@ namespace FunctionsParserNodes
             {
                 case "sin":
                 {
-                    if (argument is FunctionNode)
-                    {
-                        Node left = new FunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.DifferentiateBy(variable)),
-                                 right = new UnaryFunctionNode("cos", argument.Clone());
-                        return new FunctionNode(left, BinaryOperations.Multiply, right);
-                    }
-                    else if (argument is VariableNode)
-                        return new FunctionNode("cos", argument.Clone());
-                    else
+                    if (argument.IsConstRelatively(variable))
                         return new NumberNode(0);
+                    else if (argument is VariableNode)
+                        return new UnaryFunctionNode("cos", argument.Clone());
+                    else
+                    {
+                        Node left = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, new UnaryFunctionNode("cos", argument.Clone())),
+                             right = argument.DifferentiateBy(variable);
+                        return new BinaryFunctionNode(left, BinaryOperations.Multiply, right);
+                    }
                 }
                 case "cos":
                 {
                     Node left, right = new UnaryFunctionNode("sin", argument.Clone());
-                    if (argument is FunctionNode)
-                        left = new FunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.DifferentiateBy(variable));
+                    if (argument.IsConstRelatively(variable))
+                        return new NumberNode(0);
                     else if (argument is VariableNode)
                         left = new NumberNode(-1);
                     else
-                        return new NumberNode(0);
+                        left = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.DifferentiateBy(variable));
 
-                    return new FunctionNode(left, BinaryOperations.Multiply, right);
+                    return new BinaryFunctionNode(left, BinaryOperations.Multiply, right);
                 }
                 case "tg":
                 {
-                    Node numerator, denominator = new FunctionNode(new UnaryFunctionNode("cos", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
-                    if (argument is FunctionNode)
-                        numerator = argument.DifferentiateBy(variable);
+                    Node numerator, denominator = new BinaryFunctionNode(new UnaryFunctionNode("cos", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
+                    if (argument.IsConstRelatively(variable))
+                        return new NumberNode(0);
                     else if (argument is VariableNode)
                         numerator = new NumberNode(1);
                     else
-                        return new NumberNode(0);
+                        numerator = argument.DifferentiateBy(variable);
 
-                    return new FunctionNode(numerator, BinaryOperations.Divide, denominator);
+                    return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                 }
                 case "ctg":
                 {
-                    Node numerator, denominator = new FunctionNode(new UnaryFunctionNode("sin", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
-                    if (argument is FunctionNode)
-                        numerator = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.DifferentiateBy(variable));
+                    Node numerator, denominator = new BinaryFunctionNode(new UnaryFunctionNode("sin", argument.Clone()), BinaryOperations.Power, new NumberNode(2));
+                    if (argument.IsConstRelatively(variable))
+                        return new NumberNode(0);
                     else if (argument is VariableNode)
                         numerator = new NumberNode(1);
                     else
-                        return new NumberNode(0);
+                        numerator = new BinaryFunctionNode(new NumberNode(-1), BinaryOperations.Multiply, argument.DifferentiateBy(variable));
 
-                    return new FunctionNode(numerator, BinaryOperations.Divide, denominator);
+                    return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                 }
                 case "ln":
                 {
                     Node numerator, denominator = argument.Clone();
-                    if (argument is FunctionNode)
-                        numerator = argument.DifferentiateBy(variable);
+                    if (argument.IsConstRelatively(variable))
+                        return new NumberNode(0);
                     else if (argument is VariableNode)
                         numerator = new NumberNode(1);
                     else
-                        return new NumberNode(0);
+                        numerator = argument.DifferentiateBy(variable);
 
-                    return new FunctionNode(numerator, BinaryOperations.Divide, denominator);
+                    return new BinaryFunctionNode(numerator, BinaryOperations.Divide, denominator);
                 }
                 default: { throw new InvalidOperationException("Операция не распознана."); }
             }
