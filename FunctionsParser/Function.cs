@@ -88,7 +88,7 @@ namespace FunctionsParser
         /// Поиск производной функции одной переменной.
         /// </summary>
         /// <returns>полученная производная в виде FunctionParser</returns>
-        /// /// <exception cref="UnsupportedOperationException">при попытке применить для функции многих переменных</exception>
+        /// /// <exception cref="InvalidOperationException">при попытке применить для функции многих переменных</exception>
         public FunctionParser Differentiate()
         {
             if (variables.Keys.Count == 0)

@@ -7,13 +7,17 @@ using System.Linq;
 
 namespace FunctionsParserNodes
 {
+    /// <summary>
+    /// Перечисление бинарных операторов.
+    /// </summary>
     enum BinaryOperations
     {
         Plus, Minus, Multiply, Divide, Power
     }
 
-    public delegate double GeneratedFunc(params double[] arguments);
-
+    /// <summary>
+    /// Набор методов для работы с <see cref="BinaryOperations"/>
+    /// </summary>
     static class BinaryOperationsExtention
     {
         public static string ToStr(this BinaryOperations op)
@@ -42,6 +46,9 @@ namespace FunctionsParserNodes
         }
     }
 
+    /// <summary>
+    /// Базовый класс узла дерева выражений.
+    /// </summary>
     abstract class Node
     {
         #region Cтатические переменные
@@ -59,30 +66,84 @@ namespace FunctionsParserNodes
         #endregion
 
         #region Свойства
+        /// <summary>
+        /// Является ли узел узлом-числом.
+        /// </summary>
         public virtual bool IsNumber { get { return false; } }
+        /// <summary>
+        /// является ли узел узлом-переменной
+        /// </summary>
         public virtual bool IsVariable { get { return false; } }
         #endregion
 
         protected Func<double> function;
 
         #region Абстрактные методы
+        /// <summary>
+        /// Поиск производной функции одного аргумента.
+        /// </summary>
+        /// <returns>Производная.</returns>
+        /// <exception cref="InvalidOperationException">В случае попытки применения к функции многих переменных.</exception>
         public abstract Node Differentiate();
+        /// <summary>
+        /// Поиск частной производной по переменной <paramref name="variable"/>.
+        /// </summary>
+        /// <param name="variable">Переменная, по которой осуществляется дифференцирование.</param>
+        /// <returns>Частная производная по </paramref name="variable"/></returns>
         public abstract Node DifferentiateBy(string variable);
+        /// <summary>
+        /// Создание дерева функциональных объектов из поддерева с вершиной в текущем узле.
+        /// </summary>
+        /// <returns></returns>
         public abstract Func<double> Functionalize();
+        /// <summary>
+        /// Представление узла в виде, пригодном для отображения в TreeView.
+        /// </summary>
+        /// <returns></returns>
         public abstract TreeNode ToTree();
+        /// <summary>
+        /// Создание копии текущего узла (поверхностное).
+        /// </summary>
+        /// <returns>Поверхностная копия.</returns>
         public abstract Node Clone();
+        /// <summary>
+        /// Соотнесение узлов-переменных со словарём переменных.
+        /// </summary>
+        /// <param name="vars">словарь переменных</param>
         public abstract void SetVariables(SortedDictionary<string, double> vars);
         /// <summary>
         /// Проверка оптимизированного дерева на предмет изчезнувших в процессе оптимизации переменных
         /// </summary>
         /// <param name="variables">список переменных неоптимизированного дерева</param>
         public abstract void CheckVariables(List<string> variables);
+        /// <summary>
+        /// Установка тригонометрических функций на использование градусов или радианов в качестве аргумента.
+        /// </summary>
+        /// <param name="useDegrees">Использовать ли градусы в качестве аргумента.</param>
         public abstract void SetTrigonometry(bool useDegrees);
-        public abstract bool IsConstRelatively(string variable);
+        /// <summary>
+        /// Проверка, является ли поддерево константой относительно переменной <paramref name="variable"/>.
+        /// </summary>
+        /// <param name="variable">переменная</param>
+        /// <returns></returns>
+        internal abstract bool IsConstRelatively(string variable);
+        /// <summary>
+        /// Создание строкового представления узла.
+        /// </summary>
         public abstract override string ToString();
-        #endregion абстрактные методы
+        #endregion
 
-        //статические методы
+        public override bool Equals(object obj)
+        {
+            return base.Equals(obj);
+        }
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        #region статические методы
         public static bool operator == (Node node, double number)
         {
             return (node as NumberNode)?.Number == number;
@@ -103,7 +164,7 @@ namespace FunctionsParserNodes
             return new BinaryFunctionNode(a.Clone(), BinaryOperations.Minus, new NumberNode(b));
         }
 
-        public static BinaryFunctionNode operator *(Node a, Node b)
+        public static BinaryFunctionNode operator * (Node a, Node b)
         {
             return new BinaryFunctionNode(a.Clone(), BinaryOperations.Multiply, b.Clone());
         }
@@ -127,6 +188,7 @@ namespace FunctionsParserNodes
 
         /// <summary>
         /// Возвращает новый объект, не изменяет исходный.
+        /// Если self — не NumberNode, то объект-результат будет содержать ссылку на операнд.
         /// </summary>
         /// <param name="self">исходный объект</param>
         /// <returns>изменённая копия исходного объекта</returns>
@@ -360,8 +422,12 @@ namespace FunctionsParserNodes
             }
             return node;
         }
+        #endregion
     }
 
+    /// <summary>
+    /// Класс узла дерева выражений, представляющий бинарные функции. Наследник <see cref="Node"/>
+    /// </summary>
     class BinaryFunctionNode : Node
     {
         internal Node operand1, operand2;
@@ -381,26 +447,29 @@ namespace FunctionsParserNodes
             operation = op;
         }
 
+        /// <summary>
+        /// Создание копии текущего узла (поверхностное).
+        /// </summary>
+        /// <returns>Поверхностная копия.</returns>
         public override Node Clone()
         {
             return new BinaryFunctionNode(operand1.Clone(), operation, operand2.Clone());
         }
 
         /// <summary>
-        /// Дифференцирует дерево с вершиной в текущем узле.
-        /// Untested changes!
+        /// Поиск производной функции одного аргумента.
         /// </summary>
-        /// <exception cref="InvalidOperationException">Если заданный оператор не соответствует ни одному из BinaryOperators.</exception>
+        /// <returns>Производная.</returns>
+        /// <exception cref="InvalidOperationException">В случае попытки применения к функции многих переменных.</exception>
         public override Node Differentiate()
         {
             switch (operation)
             {
                 case BinaryOperations.Plus:
                 case BinaryOperations.Minus:
-                    return new BinaryFunctionNode(operand1.Differentiate(), operation, operand2.Differentiate());
+                return new BinaryFunctionNode(operand1.Differentiate(), operation, operand2.Differentiate());
                 case BinaryOperations.Multiply:
                 {
-                    //untested
                     #region Multiply
                     //(cf)' = c*f'
                     if (operand1.IsNumber)
@@ -424,7 +493,6 @@ namespace FunctionsParserNodes
                 }
                 case BinaryOperations.Divide:
                 {
-                    //untested
                     #region Divide
                     //(с)' = 0 !!!!!!!!
                     //(f/c)' = f'/c
@@ -454,7 +522,6 @@ namespace FunctionsParserNodes
                 }
                 case BinaryOperations.Power:
                 {
-                    //untested
                     #region Power
                     //(x^c)' = c*x^(c-1)
                     if (operand2.IsNumber && operand1.IsVariable)
@@ -462,8 +529,8 @@ namespace FunctionsParserNodes
                         BinaryFunctionNode tmp = Clone() as BinaryFunctionNode;
                         NumberNode degree = tmp.operand2 as NumberNode;
                         --degree;
-                        
-                        return new BinaryFunctionNode(new NumberNode(degree.Number+1), BinaryOperations.Multiply, tmp);
+
+                        return new BinaryFunctionNode(new NumberNode(degree.Number + 1), BinaryOperations.Multiply, tmp);
                     }
                     //(f^c)' = c*f'*f^c-1 ???
                     else if (operand2.IsNumber)
@@ -489,7 +556,7 @@ namespace FunctionsParserNodes
                         else
                             return new BinaryFunctionNode(ln, BinaryOperations.Multiply, new BinaryFunctionNode(Clone(), BinaryOperations.Multiply, operand2.Differentiate()));
                     }
-                    //f^g
+                    //f^g = f^g * (g'*ln(f) + g*f'/f) 
                     else
                     {
                         Node f = operand1.Clone(),
@@ -502,20 +569,22 @@ namespace FunctionsParserNodes
                     }
                     #endregion
                 }
-                default: throw new InvalidOperationException("Нераспознанный оператор.");
-            }
+                default: throw new InvalidOperationException("Нераспознанный оператор. Если вы видите эту ошибку, то автор накосячил в методе создания дерева.");
+            } 
         }
 
-        //Возвращает только FunctionNode, VariableNode и NumberNode
+        /// <summary>
+        /// Поиск частной производной по переменной <paramref name="variable"/>.
+        /// </summary>
+        /// <param name="variable">Переменная, по которой осуществляется дифференцирование.</param>
+        /// <returns>Частная производная.</returns>
         public override Node DifferentiateBy(string variable)
         {
             switch (operation)
             {
-                //changed but untested
                 case BinaryOperations.Plus:
                 case BinaryOperations.Minus:
                     return new BinaryFunctionNode(operand1.DifferentiateBy(variable), operation, operand2.DifferentiateBy(variable));
-                //changed but untested
                 case BinaryOperations.Multiply:
                 {
                     #region Multiply
@@ -539,7 +608,6 @@ namespace FunctionsParserNodes
                     }
                     #endregion
                 }
-                //changed but untested
                 case BinaryOperations.Divide:
                 {
                     #region Divide
@@ -571,7 +639,6 @@ namespace FunctionsParserNodes
                     }
                     #endregion
                 }
-                //changed but untested
                 case BinaryOperations.Power:
                 {
                     #region Power
@@ -608,7 +675,7 @@ namespace FunctionsParserNodes
                     }
                     #endregion
                 }
-                default: throw new InvalidOperationException("Нераспознанный оператор.");
+                default: throw new InvalidOperationException("Нераспознанный оператор. Этого просто не может быть, если автор не накосячил с методом создания дерева.");
             }
         }
 
@@ -672,12 +739,15 @@ namespace FunctionsParserNodes
             operand2.CheckVariables(variables);
         }
 
-        public override bool IsConstRelatively(string variable)
+        internal override bool IsConstRelatively(string variable)
         {
             return operand1.IsConstRelatively(variable) && operand2.IsConstRelatively(variable);
         }
     }
 
+    /// <summary>
+    /// Класс узла дерева выражений, представляющий унарные функции. Наследник <see cref="Node"/>
+    /// </summary>
     class UnaryFunctionNode : Node
     {
         string func;
@@ -908,12 +978,15 @@ namespace FunctionsParserNodes
             argument.CheckVariables(variables);
         }
 
-        public override bool IsConstRelatively(string variable)
+        internal override bool IsConstRelatively(string variable)
         {
             return argument.IsConstRelatively(variable);
         }
     }
 
+    /// <summary>
+    /// Класс узла дерева выражений, представляющий узел с переменной. Согласно логике является "листом" дерева. Наследник <see cref="Node"/>
+    /// </summary>
     class VariableNode : Node
     {
         public override bool IsVariable { get { return true; } }
@@ -981,18 +1054,21 @@ namespace FunctionsParserNodes
             variables.Remove(variable);
         }
 
-        public override bool IsConstRelatively(string variable)
+        internal override bool IsConstRelatively(string variable)
         {
             return this.variable != variable;
         }
     }
 
+    /// <summary>
+    /// Класс узла дерева выражений, представляющий узел с числом. Согласно логике является "листом" дерева. Наследник <see cref="Node"/>
+    /// </summary>
     class NumberNode : Node
     {
         double number;
 
         /// <summary>
-        /// Изменяет исходный объект
+        /// Декремент. Изменяет исходный объект
         /// </summary>
         /// <param name="self"></param>
         /// <returns></returns>
@@ -1003,7 +1079,7 @@ namespace FunctionsParserNodes
         }
 
         /// <summary>
-        /// Изменяет исходный обьект
+        /// Унарный минус. Изменяет исходный обьект
         /// </summary>
         /// <param name="self"></param>
         /// <returns></returns>
@@ -1013,6 +1089,9 @@ namespace FunctionsParserNodes
             return self;
         }
 
+        /// <summary>
+        /// Оператор сложения для <see cref="NumberNode"/>.
+        /// </summary>
         public static NumberNode operator +(NumberNode op1, int op2)
         {
             return new NumberNode(op1.Number + op2);
@@ -1022,10 +1101,6 @@ namespace FunctionsParserNodes
 
         public double Number { get { return number; } }
 
-        /// <summary>
-        /// Создаёт экземпляр из строки.
-        /// </summary>
-        /// <exception cref="ArgumentException">Если строка не преобразуется в число.</exception>
         public NumberNode(string expr)
         {
             if (!double.TryParse(expr, out number))
@@ -1102,7 +1177,7 @@ namespace FunctionsParserNodes
             return;
         }
 
-        public override bool IsConstRelatively(string variable)
+        internal override bool IsConstRelatively(string variable)
         {
             return true;
         }
