@@ -10,13 +10,14 @@ namespace FunctionsParser
     public class FunctionParser
     {
         static Regex removeSpaces = new Regex(@"\s+"),
-                     addMultiply = new Regex($@"(\d+)(x|[(]|{Node.Functions})"),
+                     addMultiply = new Regex($@"(\d+)(\p{"{Ll}"}|\p{"{Lu}"}|[(]|{Node.Functions})"),
                      defineVariables = new Regex($@"((?<=(^|[{Node.operations}|(]))x(\d*)(?=([{Node.operations}|)]|\b)))", RegexOptions.Singleline); //|((?<=([(]))x(\d*)(?=([)]|\b)))
 
         string expression;
         Node root;
         Func<double> function;
         SortedDictionary<string, double> variables;
+        List<FunctionParser> cachedDerivatives = new List<FunctionParser>();
         public double CachedValue { get; private set; }
 
         public List<string> Variables
@@ -44,30 +45,32 @@ namespace FunctionsParser
             replacement = "$1*$2";
             expression = addMultiply.Replace(expression, replacement);
 
-            //"опознание" переменных
-            variables = new SortedDictionary<string, double>();
-            DefineVariables(expression);
-
             try { root = Node.CreateNewNode(expression); }
             catch (BracketsMismatchException ex)
             {
                 throw new ArgumentException(ex.Message, ex);
             }
 
+            //"опознание" переменных
+            variables = new SortedDictionary<string, double>();
+            root.DefineVariables(variables);
             CachedValue = double.NaN;
         }
 
-        FunctionParser(Node new_root, SortedDictionary<string, double> vars)
+        FunctionParser(Node new_root, SortedDictionary<string, double> vars, bool checkVariables = false)
         {
             root = new_root;
             variables = new SortedDictionary<string, double>(vars);
             CachedValue = double.NaN;
 
-            var variablesToCheck = variables.Keys.ToList();
-            root.CheckVariables(variablesToCheck);
+            if (checkVariables)
+            {
+                var variablesToCheck = variables.Keys.ToList();
+                root.CheckVariables(variablesToCheck);
 
-            foreach (var v in variablesToCheck)
-                variables.Remove(v);
+                foreach (var v in variablesToCheck)
+                    variables.Remove(v);
+            }
         }
 
         /// <summary>
@@ -87,16 +90,23 @@ namespace FunctionsParser
         /// <summary>
         /// Поиск производной функции одной переменной.
         /// </summary>
+        /// <param name="rank">порядок производной</param>
         /// <returns>полученная производная в виде FunctionParser</returns>
         /// /// <exception cref="InvalidOperationException">при попытке применить для функции многих переменных</exception>
-        public FunctionParser Differentiate()
+        public FunctionParser Differentiate(int rank = 1)
         {
+            if (rank == 0)
+                return new FunctionParser(root.Clone(), new SortedDictionary<string, double>(variables));
             if (variables.Keys.Count == 0)
                 return new FunctionParser("0");
             if (variables.Keys.Count > 1)
                 throw new NotImplementedException("Поиск полной производной функции многих переменных не поддерживается.");
 
-            return new FunctionParser(root.Differentiate(), variables);
+            Node diff = Node.Optimize(root.Differentiate());
+            for (int i = rank - 1; i > 0; ++i)
+                diff = Node.Optimize(root.Differentiate());
+
+            return new FunctionParser(diff, new SortedDictionary<string, double>(variables));
         }
 
         /// <summary>
@@ -106,7 +116,9 @@ namespace FunctionsParser
         /// <returns></returns>
         public FunctionParser DifferentiateBy(string variable)
         {
-            return new FunctionParser(root.DifferentiateBy(variable), variables);
+            SortedDictionary<string, double> tmp = new SortedDictionary<string, double>(variables);
+            Node rt = root.DifferentiateBy(variable);
+            return new FunctionParser(rt, tmp);
         }
 
         /// <summary>
@@ -151,9 +163,11 @@ namespace FunctionsParser
         /// Оптимизация дерева
         /// </summary>
         /// <returns>оптимизированное дерево</returns>
-        public FunctionParser Optimize()
+        public FunctionParser Optimize(bool checkVariables = false)
         {
-            return new FunctionParser(Node.Optimize(root), variables);
+            SortedDictionary<string, double> tmp = new SortedDictionary<string, double>(variables);
+            Node rt = Node.Optimize(root);
+            return new FunctionParser(rt, tmp, checkVariables);
         }
     }
 }

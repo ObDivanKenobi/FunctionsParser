@@ -112,6 +112,11 @@ namespace FunctionsParserNodes
         /// <param name="vars">словарь переменных</param>
         public abstract void SetVariables(SortedDictionary<string, double> vars);
         /// <summary>
+        /// Получение списка переменных в выражении
+        /// </summary>
+        /// <param name="vars">Словарь для списка переменных</param>
+        public abstract void DefineVariables(SortedDictionary<string, double> vars);
+        /// <summary>
         /// Проверка оптимизированного дерева на предмет изчезнувших в процессе оптимизации переменных
         /// </summary>
         /// <param name="variables">список переменных неоптимизированного дерева</param>
@@ -743,6 +748,12 @@ namespace FunctionsParserNodes
         {
             return operand1.IsConstRelatively(variable) && operand2.IsConstRelatively(variable);
         }
+
+        public override void DefineVariables(SortedDictionary<string, double> vars)
+        {
+            operand1.DefineVariables(vars);
+            operand2.DefineVariables(vars);
+        }
     }
 
     /// <summary>
@@ -982,6 +993,11 @@ namespace FunctionsParserNodes
         {
             return argument.IsConstRelatively(variable);
         }
+
+        public override void DefineVariables(SortedDictionary<string, double> vars)
+        {
+            argument.DefineVariables(vars);
+        }
     }
 
     /// <summary>
@@ -990,7 +1006,7 @@ namespace FunctionsParserNodes
     class VariableNode : Node
     {
         public override bool IsVariable { get { return true; } }
-        public string variable { get; private set; }
+        public string Variable { get; private set; }
         internal SortedDictionary<string, double> variables;
 
         /// <summary>
@@ -999,12 +1015,12 @@ namespace FunctionsParserNodes
         /// <param name="expr">строка</param>
         public VariableNode(string expr)
         {
-            variable = expr;
+            Variable = expr;
         }
 
         public override Node Clone()
         {
-            return new VariableNode(variable);
+            return new VariableNode(Variable);
         }
 
         public override Node Differentiate()
@@ -1014,27 +1030,27 @@ namespace FunctionsParserNodes
 
         public override Node DifferentiateBy(string variable)
         {
-            return this.variable == variable ? new NumberNode(1) : new NumberNode(0);
+            return this.Variable == variable ? new NumberNode(1) : new NumberNode(0);
         }
 
         public override Func<double> Functionalize()
         {
-            return () => { return variables[variable]; };
+            return () => { return variables[Variable]; };
         }
 
         public override TreeNode ToTree()
         {
-            return new TreeNode($"{variable}");
+            return new TreeNode($"{Variable}");
         }
 
         public override string ToString()
         {
-            return variable;
+            return Variable;
         }
 
         public override void SetVariables(SortedDictionary<string, double> vars)
         {
-            if (!vars.ContainsKey(variable))
+            if (!vars.ContainsKey(Variable))
                 throw new ParametersMismatchException("Некорректная переменная!");
 
             variables = vars;
@@ -1051,12 +1067,18 @@ namespace FunctionsParserNodes
         /// <param name="variables">список переменных неоптимизированного дерева</param>
         public override void CheckVariables(List<string> variables)
         {
-            variables.Remove(variable);
+            variables.Remove(Variable);
         }
 
         internal override bool IsConstRelatively(string variable)
         {
-            return this.variable != variable;
+            return this.Variable != variable;
+        }
+
+        public override void DefineVariables(SortedDictionary<string, double> vars)
+        {
+            if (!vars.ContainsKey(Variable))
+                vars.Add(Variable, double.NaN);
         }
     }
 
@@ -1180,6 +1202,11 @@ namespace FunctionsParserNodes
         internal override bool IsConstRelatively(string variable)
         {
             return true;
+        }
+
+        public override void DefineVariables(SortedDictionary<string, double> vars)
+        {
+            return;
         }
     }
 }
